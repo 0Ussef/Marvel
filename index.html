@@ -55,8 +55,22 @@ header{
 
 .top-bar{
   display:flex;
-  justify-content:space-between;
+  flex-direction:column;
+  gap:8px;
   padding:10px;
+}
+
+.top-row{
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+}
+
+input[type="text"]{
+  padding:8px;
+  border-radius:8px;
+  border:none;
+  width:100%;
 }
 
 button{
@@ -68,6 +82,10 @@ button{
   font-weight:bold;
   cursor:pointer;
 }
+.small{
+  font-size:12px;
+  color:var(--muted);
+}
 </style>
 </head>
 
@@ -76,34 +94,35 @@ button{
 <header>MCU Chronological Watchlist</header>
 
 <div class="top-bar">
-  <button onclick="loadList()">Refresh</button>
-  <span id="status"></span>
+  <div class="top-row">
+    <button onclick="loadList()">Refresh</button>
+    <span id="status"></span>
+  </div>
+  <input type="text" id="search" placeholder="Search...">
+  <div class="small" id="progress"></div>
 </div>
 
 <div class="container" id="list"></div>
 
 <script>
 const SHEET_URL = "https://docs.google.com/spreadsheets/d/1Xfe--9Wshbb3ru0JplA2PnEwN7mVawazKmhWJjr_wKs/gviz/tq?tqx=out:json&sheet=Chronological%20Order";
+const OMDB_KEY = "98416621";
 
 let watched = JSON.parse(localStorage.getItem("watched") || "{}");
+let movieCache = JSON.parse(localStorage.getItem("movieCache") || "{}");
+let allTitles = [];
 
 async function fetchSheet(){
   const res = await fetch(SHEET_URL);
   const text = await res.text();
-
-  // Remove Google wrapper
   const json = JSON.parse(text.substring(47).slice(0, -2));
-
   const rows = json.table.rows;
 
   let list = [];
 
   rows.forEach((row, index) => {
-    // Skip header row(s) if needed
     if(index < 1) return;
-
-    const title = row.c[1]?.v; // Column B
-
+    const title = row.c[1]?.v;
     if(title){
       list.push(title.toString().trim());
     }
@@ -112,7 +131,110 @@ async function fetchSheet(){
   return list;
 }
 
+async function getMovieData(title){
+
+  // ✅ Use cache if exists
+  if(movieCache[title]){
+    return movieCache[title];
+  }
+
+  try{
+    const url = `https://www.omdbapi.com/?t=${encodeURIComponent(title)}&apikey=${OMDB_KEY}`;
+    const res = await fetch(url);
+    const data = await res.json();
+
+    if(data.Response === "True"){
+      const movieData = {
+        poster: data.Poster !== "N/A" ? data.Poster : null,
+        rating: data.imdbRating !== "N/A" ? data.imdbRating : "N/A",
+        imdbId: data.imdbID
+      };
+
+      // Save to cache
+      movieCache[title] = movieData;
+      localStorage.setItem("movieCache", JSON.stringify(movieCache));
+
+      return movieData;
+    }
+  } catch(err){
+    console.error(err);
+  }
+
+  return null;
+}
+
+function updateProgress(){
+  const total = allTitles.length;
+  const watchedCount = allTitles.filter(t => watched[t]).length;
+  document.getElementById("progress").innerText = `Watched: ${watchedCount} / ${total}`;
+}
+
+function renderList(titles){
+
+  const container = document.getElementById("list");
+  container.innerHTML = "";
+
+  titles.forEach(async (title) => {
+
+    const card = document.createElement("div");
+    card.className = "card";
+
+    card.innerHTML = `<div>Loading...</div>`;
+    container.appendChild(card);
+
+    const movieData = await getMovieData(title);
+
+    card.innerHTML = `
+      <div style="display:flex; gap:10px; align-items:center;">
+
+        ${movieData?.poster ? `
+          <img src="${movieData.poster}" style="width:50px; border-radius:6px;">
+        ` : ""}
+
+        <div>
+          <div class="title">${title}</div>
+          <div class="small">⭐ ${movieData?.rating ?? "N/A"}</div>
+
+          ${movieData?.imdbId ? `
+            <a href="https://www.imdb.com/title/${movieData.imdbId}" target="_blank" class="small">
+              IMDb
+            </a>
+          ` : ""}
+        </div>
+      </div>
+
+      <input type="checkbox" class="checkbox" ${watched[title] ? "checked" : ""}>
+    `;
+
+    const checkbox = card.querySelector("input");
+
+    checkbox.addEventListener("change", () => {
+      watched[title] = checkbox.checked;
+      localStorage.setItem("watched", JSON.stringify(watched));
+      updateProgress();
+    });
+
+  });
+
+  updateProgress();
+}
+
+function setupSearch(){
+  const searchInput = document.getElementById("search");
+
+  searchInput.addEventListener("input", () => {
+    const query = searchInput.value.toLowerCase();
+
+    const filtered = allTitles.filter(title =>
+      title.toLowerCase().includes(query)
+    );
+
+    renderList(filtered);
+  });
+}
+
 async function loadList(){
+
   const container = document.getElementById("list");
   const status = document.getElementById("status");
 
@@ -120,32 +242,11 @@ async function loadList(){
   status.innerText = "";
 
   try{
-    const titles = await fetchSheet();
+    allTitles = await fetchSheet();
+    renderList(allTitles);
+    setupSearch();
 
-    container.innerHTML = "";
-
-    titles.forEach(title => {
-      const id = title;
-
-      const card = document.createElement("div");
-      card.className = "card";
-
-      card.innerHTML = `
-        <div class="title">${title}</div>
-        <input type="checkbox" class="checkbox" ${watched[id] ? "checked" : ""}>
-      `;
-
-      const checkbox = card.querySelector("input");
-
-      checkbox.addEventListener("change", () => {
-        watched[id] = checkbox.checked;
-        localStorage.setItem("watched", JSON.stringify(watched));
-      });
-
-      container.appendChild(card);
-    });
-
-    status.innerText = "Loaded " + titles.length + " entries";
+    status.innerText = "Loaded " + allTitles.length + " entries";
 
   } catch(err){
     console.error(err);
