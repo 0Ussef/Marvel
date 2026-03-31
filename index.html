@@ -148,7 +148,7 @@ async function fetchSheet(){
   const json = JSON.parse(text.substring(47).slice(0, -2));
 
   return json.table.rows
-    .slice(1)
+    .slice(0)
     .map(r => {
       const titleCell = r.c[1];
       const dateCell = r.c[2];
