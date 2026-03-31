@@ -3,123 +3,118 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>MCU Watchlist</title>
+<title>MCU Chronological Watchlist</title>
 
 <style>
 :root{
-  --bg:#0f1115;
-  --card:#1a1d24;
-  --text:#ffffff;
-  --muted:#a9b0bb;
-  --accent:#ff365b;
+  --bg:#0a0a0e;
+  --card:#161a23;
+  --card-hover:#1e2530;
+  --text:#f8fafc;
+  --text-secondary:#94a3b8;
+  --accent:#ff1a47;
+  --gradient:linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  --shadow:0 8px 32px rgba(0,0,0,0.4);
 }
+
+* { box-sizing: border-box; }
 
 body{
   margin:0;
-  font-family: Arial, sans-serif;
-  background:var(--bg);
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  background: var(--bg);
   color:var(--text);
 }
 
-/* Header */
 header{
-  padding:16px;
-  background:var(--accent);
-  font-size:20px;
-  font-weight:bold;
+  padding:24px 20px;
+  background: var(--gradient);
+  font-size:28px;
+  font-weight:800;
   text-align:center;
+  box-shadow:var(--shadow);
 }
 
-/* Top bar */
 .top-bar{
-  padding:10px;
-  display:flex;
-  flex-direction:column;
-  gap:8px;
+  padding:20px;
+  position:sticky;
+  top:0;
+  background:var(--bg);
+  z-index:10;
 }
 
-.top-row{
+.search-container {
+  max-width:600px;
+  margin:0 auto;
+}
+
+#search{
+  width:100%;
+  padding:14px;
+  border-radius:12px;
+  border:none;
+  background:var(--card);
+  color:var(--text);
+  font-size:16px;
+}
+
+#progress{
+  text-align:center;
+  margin-top:10px;
+  color:var(--text-secondary);
+}
+
+.container{
+  padding:20px;
+  max-width:800px;
+  margin:0 auto;
+}
+
+.card{
   display:flex;
   justify-content:space-between;
   align-items:center;
-}
-
-input[type="text"]{
-  padding:10px;
-  border-radius:8px;
-  border:none;
-  outline:none;
-}
-
-/* Progress */
-#progress{
-  font-size:12px;
-  color:var(--muted);
-}
-
-/* Grid */
-.grid{
-  display:grid;
-  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
-  gap:12px;
-  padding:10px;
-}
-
-/* Card */
-.movie-card{
   background:var(--card);
-  border-radius:12px;
-  overflow:hidden;
-  display:flex;
-  flex-direction:column;
-  cursor:pointer;
-  transition:transform 0.2s;
+  padding:18px;
+  border-radius:16px;
+  margin-bottom:12px;
+  transition:0.3s;
 }
 
-.movie-card:hover{
-  transform:scale(1.03);
-}
-
-/* Poster */
-.poster{
-  width:100%;
-  height:200px;
-  object-fit:cover;
-  background:#222;
-}
-
-/* Info */
-.info{
-  padding:8px;
-  display:flex;
-  flex-direction:column;
-  gap:4px;
+.card:hover{
+  background:var(--card-hover);
 }
 
 .title{
+  font-size:18px;
+  font-weight:700;
+}
+
+.title a{
+  color:inherit;
+  text-decoration:none;
+}
+
+.title a:hover{
+  text-decoration:underline;
+}
+
+.meta{
+  font-size:13px;
+  color:var(--text-secondary);
+  margin-top:4px;
+}
+
+.rating{
   font-size:14px;
-  font-weight:bold;
+  margin-top:4px;
+  color:var(--text-secondary);
 }
 
-.small{
-  font-size:12px;
-  color:var(--muted);
-}
-
-/* Checkbox */
 .checkbox{
-  transform:scale(1.3);
-  margin-top:6px;
-}
-
-/* Button */
-button{
-  padding:8px 12px;
-  border:none;
-  border-radius:8px;
-  background:var(--accent);
-  color:white;
-  font-weight:bold;
+  width:22px;
+  height:22px;
+  accent-color: var(--accent);
   cursor:pointer;
 }
 </style>
@@ -130,23 +125,23 @@ button{
 <header>MCU Chronological Watchlist</header>
 
 <div class="top-bar">
-  <div class="top-row">
-    <button onclick="loadList()">Refresh</button>
-    <span id="progress"></span>
+  <div class="search-container">
+    <input type="text" id="search" placeholder="Search MCU movies...">
   </div>
-  <input type="text" id="search" placeholder="Search MCU...">
+  <div id="progress">Loading...</div>
 </div>
 
-<div class="grid" id="list"></div>
+<div class="container" id="list"></div>
 
 <script>
 const SHEET_URL = "https://docs.google.com/spreadsheets/d/1Xfe--9Wshbb3ru0JplA2PnEwN7mVawazKmhWJjr_wKs/gviz/tq?tqx=out:json&sheet=Chronological%20Order";
+const OMDB_KEY = "98416621";
 
 let watched = JSON.parse(localStorage.getItem("watched") || "{}");
-let posterCache = JSON.parse(localStorage.getItem("posterCache") || "{}");
-let allTitles = [];
+let ratingCache = JSON.parse(localStorage.getItem("ratingCache") || "{}");
+let allItems = [];
 
-/* Fetch sheet */
+/* Fetch Google Sheet */
 async function fetchSheet(){
   const res = await fetch(SHEET_URL);
   const text = await res.text();
@@ -154,75 +149,124 @@ async function fetchSheet(){
 
   return json.table.rows
     .slice(1)
-    .map(r => r.c[1]?.v?.toString().trim())
+    .map(r => {
+      const titleCell = r.c[1];
+      const dateCell = r.c[2];
+
+      let title = titleCell?.v?.toString().trim();
+      let link = null;
+
+      // Extract hyperlink from formatted HTML
+      if(titleCell?.f){
+        const html = titleCell.f;
+
+        const match = html.match(/href="([^"]+)"/);
+        if(match && match[1]){
+          link = match[1];
+        }
+
+        if(!link){
+          const urlMatch = html.match(/https?:\/\/[^\s"]+/);
+          if(urlMatch) link = urlMatch[0];
+        }
+      }
+
+      let date = dateCell?.v;
+
+      if(dateCell && dateCell.f){
+        date = dateCell.f;
+      }
+
+      if(title){
+        return { title, date, link };
+      }
+    })
     .filter(Boolean);
 }
 
-/* Wikipedia poster fetch */
-async function getPoster(title){
+/* Clean date → remove leading zeros */
+function formatDate(date){
+  if(!date) return "Unknown";
 
-  if(posterCache[title]){
-    return posterCache[title];
+  let d;
+
+  if(typeof date === "string"){
+    d = new Date(date);
+  } else if(typeof date === "number"){
+    d = new Date(Math.round((date - 25569) * 86400 * 1000));
+  }
+
+  if(!d || isNaN(d)) return "Unknown";
+
+  const day = d.getDate();
+  const month = d.getMonth() + 1;
+  const year = d.getFullYear();
+
+  return `${day} - ${month} - ${year}`;
+}
+
+/* OMDb rating with caching */
+async function getRating(title){
+  if(ratingCache[title]){
+    return ratingCache[title];
   }
 
   try{
-    const url = `https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(title)}`;
-    const res = await fetch(url);
+    const res = await fetch(`https://www.omdbapi.com/?t=${encodeURIComponent(title)}&apikey=${OMDB_KEY}`);
     const data = await res.json();
 
-    const poster = data.thumbnail?.source || null;
+    let rating = "N/A";
 
-    posterCache[title] = poster;
-    localStorage.setItem("posterCache", JSON.stringify(posterCache));
+    if(data && data.Response === "True"){
+      rating = data.imdbRating || "N/A";
+    }
 
-    return poster;
+    ratingCache[title] = rating;
+    localStorage.setItem("ratingCache", JSON.stringify(ratingCache));
+
+    return rating;
 
   } catch(err){
     console.error(err);
-    return null;
+    return "N/A";
   }
 }
 
-/* Render */
-function renderList(titles){
+/* Render list */
+function renderList(items){
   const container = document.getElementById("list");
   container.innerHTML = "";
 
-  titles.forEach(async (title) => {
+  items.forEach(async (item) => {
+    const { title, date, link } = item;
 
     const card = document.createElement("div");
-    card.className = "movie-card";
+    card.className = "card";
+
+    const titleHTML = link
+      ? `<a href="${link}" target="_blank">${title}</a>`
+      : title;
 
     card.innerHTML = `
-      <div style="height:200px; display:flex; align-items:center; justify-content:center;">
-        Loading...
+      <div>
+        <div class="title">${titleHTML}</div>
+        <div class="meta">📅 ${formatDate(date)}</div>
+        <div class="rating">⭐ Loading...</div>
       </div>
+      <input type="checkbox" class="checkbox" ${watched[title] ? "checked" : ""}>
     `;
 
     container.appendChild(card);
 
-    const poster = await getPoster(title);
-
-    card.innerHTML = `
-      ${poster ? `<img src="${poster}" class="poster">` : `<div class="poster"></div>`}
-
-      <div class="info">
-        <div class="title">${title}</div>
-        <label class="small">
-          <input type="checkbox" class="checkbox" ${watched[title] ? "checked" : ""}>
-          Watched
-        </label>
-      </div>
-    `;
+    const rating = await getRating(title);
+    card.querySelector(".rating").innerText = `⭐ ${rating}`;
 
     const checkbox = card.querySelector("input");
-
     checkbox.addEventListener("change", () => {
       watched[title] = checkbox.checked;
       localStorage.setItem("watched", JSON.stringify(watched));
       updateProgress();
     });
-
   });
 
   updateProgress();
@@ -230,10 +274,11 @@ function renderList(titles){
 
 /* Progress */
 function updateProgress(){
-  const total = allTitles.length;
-  const watchedCount = allTitles.filter(t => watched[t]).length;
-  document.getElementById("progress").innerText = 
-    `Watched: ${watchedCount} / ${total}`;
+  const total = allItems.length;
+  const watchedCount = allItems.filter(i => watched[i.title]).length;
+
+  document.getElementById("progress").innerHTML =
+    `Watched: <strong>${watchedCount}/${total}</strong>`;
 }
 
 /* Search */
@@ -242,26 +287,21 @@ function setupSearch(){
 
   search.addEventListener("input", () => {
     const q = search.value.toLowerCase();
-
-    const filtered = allTitles.filter(t =>
-      t.toLowerCase().includes(q)
+    const filtered = allItems.filter(i =>
+      i.title.toLowerCase().includes(q)
     );
-
     renderList(filtered);
   });
 }
 
-/* Load */
-async function loadList(){
-  const container = document.getElementById("list");
-  container.innerHTML = "Loading...";
-
-  allTitles = await fetchSheet();
-  renderList(allTitles);
+/* Init */
+async function load(){
+  allItems = await fetchSheet();
+  renderList(allItems);
   setupSearch();
 }
 
-loadList();
+load();
 </script>
 
 </body>
