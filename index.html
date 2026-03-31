@@ -1,162 +1,152 @@
-<!DOCTYPE html>  
-<html lang="en">  
-<head>  
-<meta charset="UTF-8">  
-<meta name="viewport" content="width=device-width, initial-scale=1.0">  
-<title>MCU Watchlist</title>  
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MCU Watchlist</title>
 
-<style>  
-:root{  
-  --primary:#FF365B7D;  
-  --bg:#0f1115;  
-  --card:#1a1d24;  
-  --text:#ffffff;  
-  --muted:#a9b0bb;  
-}  
+<style>
+:root{
+  --primary:#FF365B7D;
+  --bg:#0f1115;
+  --card:#1a1d24;
+  --text:#ffffff;
+  --muted:#a9b0bb;
+}
 
-body{  
-  margin:0;  
-  font-family: Arial, sans-serif;  
-  background:var(--bg);  
-  color:var(--text);  
-}  
+body{
+  margin:0;
+  font-family: Arial, sans-serif;
+  background:var(--bg);
+  color:var(--text);
+}
 
-header{  
-  padding:16px;  
-  background:var(--primary);  
-  font-size:20px;  
-  font-weight:bold;  
-  text-align:center;  
-}  
+header{
+  padding:16px;
+  background:var(--primary);
+  font-size:20px;
+  font-weight:bold;
+  text-align:center;
+}
 
-.container{  
-  padding:10px;  
-}  
+.container{
+  padding:10px;
+}
 
-.card{  
-  display:flex;  
-  justify-content:space-between;  
-  gap:12px;  
-  background:var(--card);  
-  padding:14px;  
-  border-radius:12px;  
-  margin-bottom:10px;  
-  align-items:center;  
-}  
+.card{
+  display:flex;
+  justify-content:space-between;
+  gap:12px;
+  background:var(--card);
+  padding:14px;
+  border-radius:12px;
+  margin-bottom:10px;
+  align-items:center;
+}
 
-.title{  
-  font-size:16px;  
-  font-weight:bold;  
-}  
+.title{
+  font-size:16px;
+  font-weight:bold;
+}
 
-.checkbox{  
-  transform: scale(1.6);  
-}  
+.checkbox{
+  transform: scale(1.6);
+}
 
-.top-bar{  
-  display:flex;  
-  justify-content:space-between;  
-  padding:10px;  
-}  
+.top-bar{
+  display:flex;
+  justify-content:space-between;
+  padding:10px;
+}
 
-button{  
-  padding:8px 12px;  
-  border:none;  
-  border-radius:8px;  
-  background:var(--primary);  
-  color:white;  
-  font-weight:bold;  
-}  
-</style>  
-</head>  
+button{
+  padding:8px 12px;
+  border:none;
+  border-radius:8px;
+  background:var(--primary);
+  color:white;
+  font-weight:bold;
+}
+</style>
+</head>
 
-<body>  
+<body>
 
-<header>MCU Chronological Watchlist</header>  
+<header>MCU Chronological Watchlist</header>
 
-<div class="top-bar">  
-  <button onclick="loadList()">Refresh</button>  
-  <span id="status"></span>  
-</div>  
+<div class="top-bar">
+  <button onclick="loadList()">Refresh</button>
+  <span id="status"></span>
+</div>
 
-<div class="container" id="list"></div>  
+<div class="container" id="list"></div>
 
-<script>  
-const SOURCE_URL = "https://marvelcinematicuniverse.fandom.com/wiki/Chronological_Order/Viewing_Timeline";  
-const PROXY = "https://api.allorigins.win/raw?url=";  
+<script>
+const SHEET_URL = "https://docs.google.com/spreadsheets/d/1Xfe--9Wshbb3ru0JplA2PnEwN7mVawazKmhWJjr_wKs/gviz/tq?tqx=out:csv&sheet=Chronological%20Order";
 
-let watched = JSON.parse(localStorage.getItem("watched") || "{}");  
+let watched = JSON.parse(localStorage.getItem("watched") || "{}");
 
-async function fetchFandomList(){  
-  const res = await fetch(PROXY + encodeURIComponent(SOURCE_URL));  
-  const html = await res.text();  
+async function fetchSheet(){
+  const res = await fetch(SHEET_URL);
+  const text = await res.text();
 
-  const parser = new DOMParser();  
-  const doc = parser.parseFromString(html, "text/html");  
+  const rows = text.split("\n").map(r => r.split(","));
 
-  const tables = doc.querySelectorAll("table.wikitable");  
+  let list = [];
 
-  let list = [];  
+  rows.forEach((row, index) => {
+    if(index < 1) return; // skip first 3 rows
 
-  tables.forEach(table => {  
-    const rows = table.querySelectorAll("tr");  
+    const title = row[1]; // Column B
 
-    rows.forEach(row => {  
-      const cols = row.querySelectorAll("td");  
+    if(title){
+      list.push(title.replace(/"/g, "").trim());
+    }
+  });
 
-      if(cols.length >= 2){  
-        const title = cols[0].innerText.trim();  
+  return list;
+}
 
-        if(title && !title.toLowerCase().includes("title")){  
-          list.push(title);  
-        }  
-      }  
-    });  
-  });  
+async function loadList(){
+  const container = document.getElementById("list");
+  container.innerHTML = "Loading...";
 
-  return list;  
-}  
+  try{
+    const titles = await fetchSheet();
 
-async function loadList(){  
-  const container = document.getElementById("list");  
-  container.innerHTML = "Loading...";  
+    container.innerHTML = "";
 
-  try{  
-    const titles = await fetchFandomList();  
+    titles.forEach(title => {
+      const id = title;
 
-    container.innerHTML = "";  
+      const card = document.createElement("div");
+      card.className = "card";
 
-    titles.forEach(title => {  
-      const id = title;  
+      card.innerHTML = `
+        <div class="title">${title}</div>
+        <input type="checkbox" class="checkbox" ${watched[id] ? "checked" : ""}>
+      `;
 
-      const card = document.createElement("div");  
-      card.className = "card";  
+      const checkbox = card.querySelector("input");
 
-      card.innerHTML = `  
-        <div class="title">${title}</div>  
-        <input type="checkbox" class="checkbox" ${watched[id] ? "checked" : ""}>  
-      `;  
+      checkbox.addEventListener("change", () => {
+        watched[id] = checkbox.checked;
+        localStorage.setItem("watched", JSON.stringify(watched));
+      });
 
-      const checkbox = card.querySelector("input");  
+      container.appendChild(card);
+    });
 
-      checkbox.addEventListener("change", () => {  
-        watched[id] = checkbox.checked;  
-        localStorage.setItem("watched", JSON.stringify(watched));  
-      });  
+    document.getElementById("status").innerText = "Loaded " + titles.length + " entries";
 
-      container.appendChild(card);  
-    });  
+  } catch(err){
+    console.error(err);
+    document.getElementById("status").innerText = "Failed to load sheet";
+  }
+}
 
-    document.getElementById("status").innerText = "Loaded " + titles.length + " entries";  
+loadList();
+</script>
 
-  } catch(err){  
-    console.error(err);  
-    document.getElementById("status").innerText = "Failed to load list";  
-  }  
-}  
-
-loadList();  
-</script>  
-
-</body>  
+</body>
 </html>
