@@ -66,6 +66,7 @@ button{
   background:var(--primary);
   color:white;
   font-weight:bold;
+  cursor:pointer;
 }
 </style>
 </head>
@@ -82,7 +83,7 @@ button{
 <div class="container" id="list"></div>
 
 <script>
-const SHEET_URL = "https://docs.google.com/spreadsheets/d/1Xfe--9Wshbb3ru0JplA2PnEwN7mVawazKmhWJjr_wKs/gviz/tq?tqx=out:csv&sheet=Chronological%20Order";
+const SHEET_URL = "https://docs.google.com/spreadsheets/d/1Xfe--9Wshbb3ru0JplA2PnEwN7mVawazKmhWJjr_wKs/gviz/tq?tqx=out:json&sheet=Chronological%20Order";
 
 let watched = JSON.parse(localStorage.getItem("watched") || "{}");
 
@@ -90,17 +91,21 @@ async function fetchSheet(){
   const res = await fetch(SHEET_URL);
   const text = await res.text();
 
-  const rows = text.split("\n").map(r => r.split(","));
+  // Remove Google wrapper
+  const json = JSON.parse(text.substring(47).slice(0, -2));
+
+  const rows = json.table.rows;
 
   let list = [];
 
   rows.forEach((row, index) => {
-    if(index < 1) return; // skip first 3 rows
+    // Skip header row(s) if needed
+    if(index < 1) return;
 
-    const title = row[1]; // Column B
+    const title = row.c[1]?.v; // Column B
 
     if(title){
-      list.push(title.replace(/"/g, "").trim());
+      list.push(title.toString().trim());
     }
   });
 
@@ -109,7 +114,10 @@ async function fetchSheet(){
 
 async function loadList(){
   const container = document.getElementById("list");
+  const status = document.getElementById("status");
+
   container.innerHTML = "Loading...";
+  status.innerText = "";
 
   try{
     const titles = await fetchSheet();
@@ -137,11 +145,12 @@ async function loadList(){
       container.appendChild(card);
     });
 
-    document.getElementById("status").innerText = "Loaded " + titles.length + " entries";
+    status.innerText = "Loaded " + titles.length + " entries";
 
   } catch(err){
     console.error(err);
-    document.getElementById("status").innerText = "Failed to load sheet";
+    container.innerHTML = "Failed to load list";
+    status.innerText = "Error loading data";
   }
 }
 
