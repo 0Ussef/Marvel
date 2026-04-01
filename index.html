@@ -125,6 +125,63 @@ header{
   accent-color: var(--accent);
   cursor:pointer;
 }
+
+.tabs-container{
+  display:flex;
+  gap:8px;
+  margin-bottom:20px;
+  flex-wrap:wrap;
+  padding:0 20px;
+}
+
+.tab{
+  padding:10px 16px;
+  border:none;
+  border-radius:8px;
+  background:var(--card);
+  color:var(--text);
+  cursor:pointer;
+  font-weight:600;
+  transition:0.3s;
+  border-bottom:3px solid transparent;
+}
+
+.tab:hover{
+  background:var(--card-hover);
+}
+
+.tab.active{
+  color:#fff;
+  border-bottom-color:#ff3b30;
+  background:var(--card-hover);
+}
+
+.tab.release-order{
+  --tab-color:#00b4db;
+}
+
+.tab.release-order.active{
+  border-bottom-color:#00b4db;
+  box-shadow:0 0 8px rgba(0,180,219,0.3);
+}
+
+.tab.upcoming{
+  --tab-color:#ffa500;
+}
+
+.tab.upcoming.active{
+  border-bottom-color:#ffa500;
+  box-shadow:0 0 8px rgba(255,165,0,0.3);
+}
+
+.tab.chronological{
+  --tab-color:#ff3b30;
+}
+
+.tab.chronological.active{
+  border-bottom-color:#ff3b30;
+  box-shadow:0 0 8px rgba(255,59,48,0.3);
+}
 </style>
 </head>
 
@@ -133,6 +190,7 @@ header{
 <header>MCU Chronological Watchlist</header>
 
 <div class="top-bar">
+  <div class="tabs-container" id="tabs"></div>
   <div class="search-container">
     <input type="text" id="search" placeholder="Search MCU movies...">
   </div>
@@ -142,16 +200,27 @@ header{
 <div class="container" id="list"></div>
 
 <script>
-const SHEET_URL = "https://docs.google.com/spreadsheets/d/1Xfe--9Wshbb3ru0JplA2PnEwN7mVawazKmhWJjr_wKs/gviz/tq?tqx=out:json&sheet=Chronological%20Order";
+const SHEET_IDS = {
+  chronological: "https://docs.google.com/spreadsheets/d/1Xfe--9Wshbb3ru0JplA2PnEwN7mVawazKmhWJjr_wKs/gviz/tq?tqx=out:json&sheet=Chronological%20Order",
+  releaseOrder: "https://docs.google.com/spreadsheets/d/1Xfe--9Wshbb3ru0JplA2PnEwN7mVawazKmhWJjr_wKs/gviz/tq?tqx=out:json&sheet=Release%20Order",
+  upcoming: "https://docs.google.com/spreadsheets/d/1Xfe--9Wshbb3ru0JplA2PnEwN7mVawazKmhWJjr_wKs/gviz/tq?tqx=out:json&sheet=Upcoming"
+};
+
+const TAB_CONFIG = [
+  { id: 'chronological', label: 'Chronological Order', className: 'chronological' },
+  { id: 'releaseOrder', label: 'Release Order', className: 'release-order' },
+  { id: 'upcoming', label: 'Upcoming', className: 'upcoming' }
+];
+
 const OMDB_KEY = "98416621";
 
 let watched = JSON.parse(localStorage.getItem("watched") || "{}");
 let ratingCache = JSON.parse(localStorage.getItem("ratingCache") || "{}");
 let allItems = [];
-
+let currentTab = 'chronological';
 /* Fetch Google Sheet */
-async function fetchSheet(){
-  const res = await fetch(SHEET_URL);
+async function fetchSheet(sheetUrl){
+  const res = await fetch(sheetUrl);
   const text = await res.text();
   const json = JSON.parse(text.substring(47).slice(0, -2));
 
@@ -308,9 +377,42 @@ function setupSearch(){
   });
 }
 
+/* Setup tabs */
+function setupTabs(){
+  const tabsContainer = document.getElementById("tabs");
+  tabsContainer.innerHTML = "";
+
+  TAB_CONFIG.forEach(tab => {
+    const button = document.createElement("button");
+    button.className = `tab ${tab.className}`;
+    button.textContent = tab.label;
+    
+    if(tab.id === currentTab){
+      button.classList.add("active");
+    }
+
+    button.addEventListener("click", () => switchTab(tab.id));
+    tabsContainer.appendChild(button);
+  });
+}
+
+/* Switch tab */
+async function switchTab(tabId){
+  currentTab = tabId;
+  document.getElementById("search").value = "";
+  
+  setupTabs();
+  
+  const sheetUrl = SHEET_IDS[tabId];
+  allItems = await fetchSheet(sheetUrl);
+  renderList(allItems);
+}
+
 /* Init */
 async function load(){
-  allItems = await fetchSheet();
+  setupTabs();
+  const sheetUrl = SHEET_IDS[currentTab];
+  allItems = await fetchSheet(sheetUrl);
   renderList(allItems);
   setupSearch();
 }
