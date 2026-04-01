@@ -224,8 +224,11 @@ async function fetchSheet(sheetUrl){
   const text = await res.text();
   const json = JSON.parse(text.substring(47).slice(0, -2));
 
+  const isReleaseOrder = sheetUrl.includes("Release%20Order");
+  const startIndex = isReleaseOrder ? 1 : 0;
+
   return json.table.rows
-    .slice(0)
+    .slice(startIndex)
     .map((r, i) => {
       const titleCell = r.c[1];
       const dateCell = r.c[2];
