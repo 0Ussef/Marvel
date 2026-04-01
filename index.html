@@ -83,6 +83,7 @@ header{
 
 .card:hover{
   background:var(--card-hover);
+  cursor: pointer;
 }
 
 .title{
@@ -90,12 +91,27 @@ header{
   font-weight:700;
 }
 
-/* ✅ RED NUMBER STYLE */
+/* ✅ NUMBER STYLE - COLOR VARIES BY TAB */
 .num {
-  color: #ff3b30;
   font-weight: 800;
   margin-right:6px;
   text-shadow: 0 0 4px rgba(255,59,48,0.5);
+}
+
+/* Tab-specific number colors */
+#list[data-tab="chronological"] .num {
+  color: #ff3b30;
+  text-shadow: 0 0 4px rgba(255,59,48,0.5);
+}
+
+#list[data-tab="releaseOrder"] .num {
+  color: #00b4db;
+  text-shadow: 0 0 4px rgba(0,180,219,0.5);
+}
+
+#list[data-tab="upcoming"] .num {
+  color: #ffa500;
+  text-shadow: 0 0 4px rgba(255,165,0,0.5);
 }
 
 .title a{
@@ -135,7 +151,7 @@ header{
 }
 
 .tab{
-  padding:10px 16px;
+  padding:10px 10px;
   border:none;
   border-radius:8px;
   background:var(--card);
@@ -212,12 +228,14 @@ const TAB_CONFIG = [
   { id: 'upcoming', label: 'Upcoming', className: 'upcoming' }
 ];
 
-const OMDB_KEY = "98416621";
+const TMDB_KEY = "aca5177e4921fcdcb0ece67dc17b5bd0";
 
 let watched = JSON.parse(localStorage.getItem("watched") || "{}");
 let ratingCache = JSON.parse(localStorage.getItem("ratingCache") || "{}");
+let imdbCache = JSON.parse(localStorage.getItem("imdbCache") || "{}");
 let allItems = [];
 let currentTab = 'chronological';
+let sheetCache = {}; // Cache sheet data by tab
 /* Fetch Google Sheet */
 async function fetchSheet(sheetUrl){
   const res = await fetch(sheetUrl);
@@ -268,6 +286,11 @@ async function fetchSheet(sheetUrl){
     .filter(Boolean);
 }
 
+/* IMDb search link */
+function getImdbSearchLink(title){
+  return `https://www.imdb.com/find?q=${encodeURIComponent(title)}&s=tt&ttype=ft`;
+}
+
 /* Format date */
 function formatDate(date){
   if(!date) return "Unknown";
@@ -289,27 +312,110 @@ function formatDate(date){
   return `${day} - ${month} - ${year}`;
 }
 
-/* OMDb rating */
+/* Extract show name from episode title (e.g., "Show Name Season 1 Episode 1" -> "Show Name") */
+function getShowName(title){
+  return title.split(/Season \d+/i)[0].trim();
+}
+
+/* Check if title is a TV episode */
+function isEpisode(title){
+  return /Season \d+.*Episode \d+/i.test(title);
+}
+
+/* Parse season and episode numbers from title */
+function parseEpisodeInfo(title){
+  const match = title.match(/Season\s+(\d+)\s+Episode\s+(\d+)/i);
+  if(match){
+    return { season: parseInt(match[1]), episode: parseInt(match[2]) };
+  }
+  return null;
+}
+
+/* IMDb link from TMDB - handles movies and episodes */
+async function getImdbLink(title){
+  if(imdbCache[title]){
+    return imdbCache[title];
+  }
+
+  try{
+    if(isEpisode(title)){
+      // Get episode-specific IMDb ID
+      const showName = getShowName(title);
+      const episodeInfo = parseEpisodeInfo(title);
+      
+      // Search for the TV show
+      const searchRes = await fetch(`https://api.themoviedb.org/3/search/tv?query=${encodeURIComponent(showName)}&api_key=${TMDB_KEY}`);
+      const searchData = await searchRes.json();
+      
+      if(searchData.results && searchData.results.length > 0){
+        const tvShowId = searchData.results[0].id;
+        
+        // Get the episode's external IDs (including IMDb ID)
+        const episodeRes = await fetch(`https://api.themoviedb.org/3/tv/${tvShowId}/season/${episodeInfo.season}/episode/${episodeInfo.episode}/external_ids?api_key=${TMDB_KEY}`);
+        const episodeData = await episodeRes.json();
+        
+        if(episodeData.imdb_id){
+          const link = `https://www.imdb.com/title/${episodeData.imdb_id}/`;
+          imdbCache[title] = link;
+          localStorage.setItem("imdbCache", JSON.stringify(imdbCache));
+          console.log(`Found episode IMDb link: ${link}`);
+          return link;
+        }
+      }
+    } else {
+      // Get movie IMDb ID
+      const searchRes = await fetch(`https://api.themoviedb.org/3/search/movie?query=${encodeURIComponent(title)}&api_key=${TMDB_KEY}`);
+      const searchData = await searchRes.json();
+      
+      if(searchData.results && searchData.results.length > 0){
+        const movieId = searchData.results[0].id;
+        
+        const movieRes = await fetch(`https://api.themoviedb.org/3/movie/${movieId}?api_key=${TMDB_KEY}&append_to_response=external_ids`);
+        const movieData = await movieRes.json();
+        
+        if(movieData.external_ids && movieData.external_ids.imdb_id){
+          const link = `https://www.imdb.com/title/${movieData.external_ids.imdb_id}/`;
+          imdbCache[title] = link;
+          localStorage.setItem("imdbCache", JSON.stringify(imdbCache));
+          return link;
+        }
+      }
+    }
+    
+    return null;
+  } catch(err){
+    console.error(`Error fetching IMDb link for "${title}":`, err);
+    return null;
+  }
+}
+
+/* TMDB rating */
 async function getRating(title){
   if(ratingCache[title]){
     return ratingCache[title];
   }
 
   try{
-    const res = await fetch(`https://www.omdbapi.com/?t=${encodeURIComponent(title)}&apikey=${OMDB_KEY}`);
+    const searchTitle = isEpisode(title) ? getShowName(title) : title;
+    const mediaType = isEpisode(title) ? 'tv' : 'movie';
+    
+    const res = await fetch(`https://api.themoviedb.org/3/search/${mediaType}?query=${encodeURIComponent(searchTitle)}&api_key=${TMDB_KEY}`);
     const data = await res.json();
 
     let rating = "N/A";
 
-    if(data && data.Response === "True"){
-      rating = data.imdbRating || "N/A";
+    if(data.results && data.results.length > 0){
+      const item = data.results[0];
+      // For TV shows, use the show's rating; for episodes, also use show rating
+      if(item.vote_average && item.vote_average > 0){
+        rating = (item.vote_average / 2).toFixed(1);
+      }
     }
 
     ratingCache[title] = rating;
     localStorage.setItem("ratingCache", JSON.stringify(ratingCache));
 
     return rating;
-
   } catch(err){
     console.error(err);
     return "N/A";
@@ -319,6 +425,9 @@ async function getRating(title){
 /* Render list */
 function renderList(items){
   const container = document.getElementById("list");
+  
+  // Set tab data attribute for color styling
+  container.setAttribute('data-tab', currentTab);
   container.innerHTML = "";
 
   items.forEach(async (item) => {
@@ -352,6 +461,19 @@ function renderList(items){
       watched[title] = checkbox.checked;
       localStorage.setItem("watched", JSON.stringify(watched));
       updateProgress();
+    });
+
+    // Click card to open IMDb link
+    card.addEventListener("click", async (e) => {
+      // Don't trigger if clicking checkbox
+      if(e.target === checkbox) return;
+
+      const imdbLink = await getImdbLink(title);
+      if(imdbLink){
+        window.open(imdbLink, "_blank");
+      } else {
+        alert("Could not find IMDb link for: " + title);
+      }
     });
   });
 
@@ -404,11 +526,22 @@ async function switchTab(tabId){
   currentTab = tabId;
   document.getElementById("search").value = "";
   
+  // Clear rating cache when switching tabs so fresh ratings are fetched
+  ratingCache = {};
+  localStorage.setItem("ratingCache", JSON.stringify(ratingCache));
+  
   setupTabs();
   
-  const sheetUrl = SHEET_IDS[tabId];
-  allItems = await fetchSheet(sheetUrl);
-  renderList(allItems);
+  // Use cached data if available, otherwise fetch
+  if(sheetCache[tabId]){
+    allItems = sheetCache[tabId];
+    renderList(allItems);
+  } else {
+    const sheetUrl = SHEET_IDS[tabId];
+    allItems = await fetchSheet(sheetUrl);
+    sheetCache[tabId] = allItems; // Cache for next time
+    renderList(allItems);
+  }
 }
 
 /* Init */
